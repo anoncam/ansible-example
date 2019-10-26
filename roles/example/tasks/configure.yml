@@ -1,0 +1,14 @@
+---
+# Example for configuration of Default user for application
+# Any specific application information will go here.
+# Include any templates that need to be configured and found in /templates
+- name: "{{ application_name }} | Create Default Admin User"
+  become: true
+  become_user: "{{ application_user }}"
+  lineinfile:
+    path: "{{ application_home_dir }}/etc/users.properties"
+    regexp: "^(#?){{ item.username }}=(.*)$"
+    line: "{{ item.username ~ '=' ~ item.password ~ ',' ~ item.roles|join(',') }}"
+    insertbefore: EOF
+  with_items: "{{ application_users }}"
+  when: application_installed_check.stat.exists

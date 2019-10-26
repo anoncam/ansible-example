@@ -1,0 +1,32 @@
+---
+application_group: example_group
+application_user: example_user
+application_name: example_name
+
+project_name: ghost-train
+vpc_name: standalone-vpc
+
+application_version: 6.2
+remote_binary_url: "https://nexus.apps.ngendevops.com/repository/ghosttrain-app-zips/{{ application_name }}/"
+# remote_binary_url: https://nexus.apps.ngendevops.com/repository/ghosttrain-app-rpms/
+application_package_name: application-full-6.2.1.redhat-084
+application_package: "{{ application_package_name }}.zip"
+application_remote_username: "svcnexus"
+aaplication_remote_password: "{{ lookup('env', 'NEXUS_SERVICE_ACCOUNT_PASSWORD') }}"
+
+application_download_dir: /tmp/{{ application_name }}
+application_install_dir: /var/{{ application_user }}
+application_home_dir: /var/{{ application_user }}/application-6.2.1.redhat-084
+application_configuration_file: "{{ application_home_dir }}/etc/org.apache.karaf.features.cfg"
+
+application_users:
+  -
+    password: "{{ lookup('env', 'APPLICATION_ADMIN_ACCOUNT_PASSWORD') }}"
+    roles:
+      - Administrator
+    username: admin
+  -
+    password: "{{ lookup('env', 'APPLICATION_GUEST_ACCOUNT_PASSWORD') }}"
+    roles:
+      - viewer
+    username: guest

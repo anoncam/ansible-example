@@ -1,0 +1,15 @@
+---
+- name: "{{ application_name }} | Copy systemd template"
+  template:
+    src: templates/application.service.j2
+    dest: /etc/systemd/system/application_name.service
+    mode: 0755
+  notify: restart application
+
+- name: "{{ application_name }} | Register systemd service"
+  become: yes
+  systemd:
+    name: "{{ application_name }}"
+    enabled: true
+    daemon_reload: true
+    state: started

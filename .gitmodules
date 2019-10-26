@@ -1,0 +1,3 @@
+[submodule "roles/nncompass"]
+	path = roles/nncompass
+	url = https://bitbucket.ngendevops.com/scm/nn/ansible-nncompass.git

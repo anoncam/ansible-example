@@ -1,0 +1,17 @@
+cd ---
+- hosts: localhost
+  connection: local
+
+  environment:
+   AWS_ACCESS_KEY: "{{ lookup('env','AWS_ACCESS_KEY_ID') }}"
+   AWS_SECRET_KEY: "{{ lookup('env','AWS_SECRET_ACCESS_KEY') }}"
+
+  roles:
+  - aws-initial
+
+- hosts: launched
+  become: yes
+  user: ec2-user
+
+  roles:
+  - configure-instances

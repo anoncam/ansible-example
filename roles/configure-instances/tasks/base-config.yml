@@ -1,0 +1,55 @@
+---
+- name: Set system hostname
+  lineinfile:
+    dest: /etc/sysconfig/network
+    line: "HOSTNAME={{ hostvars[inventory_hostname]['sethostname'] }}"
+    regexp: "HOSTNAME="
+
+- name: Change /etc/hosts from template
+  template:
+    src: roles/configure-instances/files/hosts.j2
+    dest: /etc/hosts
+    backup: true
+
+- name: Update /etc/hostname
+  lineinfile:
+    dest: /etc/hostname
+    line: "{{ hostvars[inventory_hostname]['sethostname'] }}"
+    regexp: ".*"
+  register: hostname
+
+- name: Distribute cloud.cfg
+  copy:
+    src: roles/configure-instances/files/cloud.cfg
+    dest: /etc/cloud/cloud.cfg
+    owner: root
+    group: root
+    mode: 0644
+
+- name: Yum Update
+  yum:
+    name: "*"
+    state: latest
+    update_cache: yes
+  register: yum_update
+
+- name: Install Base Packages
+  yum:
+    name: "{{ item }}"
+    state: latest
+  with_items: "{{ example_base_packages }}"
+  register: install_base_packages
+
+- name: Reboot
+  shell: "sleep 5 && reboot"
+  async: 1
+  poll: 0
+  when: yum_update.changed or install_base_packages.changed
+
+- name: Wait for the reboot to complete
+  wait_for_connection:
+    connect_timeout: 20
+    sleep: 5
+    delay: 5
+    timeout: 300
+  when: yum_update.changed or install_base_packages.changed

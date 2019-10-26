@@ -1,0 +1,24 @@
+---
+# Example fuse playbook with the ability to override variables
+# for this to work you will want to copy the representative
+# defaults/main.yml to your custom var files location.
+# This should allow for other setups and use cases
+
+- hosts: localhost
+  connection: local
+  vars_files:
+    - path/to/vars_files/custom_aws_vars.yml
+
+  roles:
+  - example-aws-setup
+
+- hosts: launched
+  become: yes
+  user: ec2-user
+  vars_files:
+    - path/to/vars_files/custom_fuse_vars.yml
+
+  roles:
+  - example-configure-instances
+  - java
+  - fuse

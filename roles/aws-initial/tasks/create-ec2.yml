@@ -1,0 +1,153 @@
+---
+# Creates EC2 instances on a loop based on data defined in 'application_instances'
+# in the hosts_vars file aws-initial.yml
+#
+# Each item in the loop gets passed to this file as var name 'instance'.
+#
+# Updated to use the exact_count and count_tag. I specified two tags,
+# The first which will be used to identify hostname, the second which will
+# be used to identify the application the instance will be tied to.
+
+
+#
+# Backward compatible with hard-coded 'image' for ami id
+#
+- set_fact:
+    instance_ami_id: "{{ instance.value.image }}"
+  when: instance.value.image is defined
+
+# Find the ami id by name for this region
+# ec2_ami_find is deprecated, so this isusing ec2_ami_facts
+- block:
+    - name: "Find current, region-specific AMI"
+      - ec2_ami_facts:
+        filters:
+          name: "{{ instance.value.ami_name }}"
+      register: found_amis
+      when: instance.value.ami_name is defined
+
+    - name: "Find most recent AMI from the list"
+      set_fact:
+        ami_details: >
+          - {{ (found_amis.images | selectattr('name', 'defined') | sort(attribute='creation_date') | last ) }}
+
+    - set_fact:
+        instance_ami_id: "{{ ami_details.image_id }}"
+      when: ami_details is defined
+
+
+
+    - name: "Fail if AMI is not found"
+      fail:
+        msg: "Could not find AMI for : {{ instance.key }}"
+      when: instance_ami_id is not defined
+
+    - name: "{{ moba_vpc_name }} | Create EC2 Instances"
+      ec2:
+        key_name: "{{ moba_vpc_key }}"
+        group: "{{ item.value.secgroup }}"
+        instance_type: "{{ item.value.instancetype }}"
+      image: "{{ item.value.image }}"
+      wait: yes
+        region: "{{ moba_aws_region }}"
+        vpc_subnet_id: "{{ item.value.subnet }}"
+        assign_public_ip: yes
+        instance_tags:
+          Name: "{{ item.key }}"
+          Usage: "{{ item.value.usage }}"
+          CreatedBy: "{{ moba_created_by }}"
+          Project: "{{ moba_project_name }}"
+        exact_count: 4
+        count_tag:
+          Name: "{{ item.key }}"
+        volumes:
+          - device_name: "{{ item.value.vol_device_name }}"
+            volume_type: "{{ item.value.vol_type }}"
+            volume_size: "{{ item.value.vol_size }}"
+            delete_on_termination: true
+      when: (instance.value.ami_platform is defined) and (instance.value.ami_platform == 'linux')
+      register: ec2
+
+- name: "{{ moba_vpc_name }} | Create Windows EC2 Instances"
+  ec2:
+    key_name: "{{ vpc_key }}"
+    group: "{{ instance.value.secgroup }}"
+    instance_type: "{{ instance.value.instancetype }}"
+    image: "{{ instance_ami_id }}"
+    wait: yes
+    region: "{{ aws_region }}"
+    vpc_subnet_id: "{{ instance.value.subnet }}"
+    assign_public_ip: yes
+    instance_tags:
+      Name: "{{ instance.key }}"
+      Usage: "{{ instance.value.usage }}"
+      CreatedBy: "{{ moba_created_by }}"
+      Project: "{{ moba_project_name }}"
+    user_data: "{{ lookup('template', '{{ role_path }}/templates/windows-userdata.txt.j2') }}"
+    exact_count: 1
+    count_tag:
+      Name: "{{ instance.key }}"
+    volumes:
+      - device_name: "{{ instance.value.vol_device_name }}"
+        volume_type: "{{ instance.value.vol_type }}"
+        volume_size: "{{ instance.value.vol_size }}"
+        delete_on_termination: true
+  register: ec2
+  when: (instance.value.ami_platform is defined) and (instance.value.ami_platform == 'windows')
+
+  # Update to assign EIP to all instances
+- name: "{{ moba_vpc_name }} | Associate elastic IP instances"
+  ec2_eip:
+    instance_id: "{{ item.instances.0.id }}"
+    region: "{{ moba_aws_region }}"
+  loop: "{{ ec2.results }}"
+  register: eip
+  when: ec2 is not defined
+
+# Get all instance information, put in a loop to potentially use for other playbooks that deploy multiple instance for different purposes
+- name: "{{ moba_vpc_name }} | Gather Instance information"
+  ec2_instance_facts:
+    region: "{{ moba_aws_region }}"
+    filters:
+      "tag:Name": "{{ item.key }}"
+      "instance-state-name": "running"
+  register: instance_facts
+
+- debug:
+    msg: "{{ instance_facts }}"
+
+# Pull instances public ip's into the launched group
+- name: "{{ moba_vpc_name }} | Add new instance to host group"
+  add_host:
+    hostname: "{{ item.instances.0.public_ip_address }}"
+    groupname: launched
+    sethostname: "{{ item.instances.0.tags.Name }}"
+    privateip: "{{ item.instances.0.private_ip_address }}"
+  with_items: "{{ instance_facts.results }}"
+  loop_control:
+    index_var: index
+
+- name: "{{ moba_vpc_name }} | Wait for the instances ssh service"
+  delegate_to: localhost
+  wait_for:
+    host: "{{ item.public_ip_address }}"
+    port: 22
+    delay: 5
+    timeout: 320
+    state: started
+  with_items: "{{ instance_facts.instances }}"
+  loop_control:
+    index_var: index
+  when: (instance.value.ami_platform is not defined) or (instance.value.ami_platform  == 'linux')
+
+- name: "{{ moba_vpc_name }} | Wait for the instances WinRM service"
+  delegate_to: localhost
+  wait_for:
+    host: "{{ this.public_ip_address }}"
+    port: 5986
+    delay: 5
+    timeout: 600
+  with_items: "{{ instance_facts.instances }}"
+  loop_control:
+    loop_var: this
+  when: (instance.value.ami_platform is defined) and (instance.value.ami_platform == 'windows')

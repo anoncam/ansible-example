@@ -1,0 +1,12 @@
+[Unit]
+Description={{ application_name }} Service
+After=syslog.target network.target
+
+[Service]
+Type=forking
+User={{ application_user }}
+ExecStart={{ application_home_dir }}/bin/start
+ExecStop={{ application_home_dir }}/bin/stop
+
+[Install]
+WantedBy=multi-user.target

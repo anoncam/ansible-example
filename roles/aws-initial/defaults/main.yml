@@ -1,0 +1,58 @@
+---
+
+moba_vpc_name: moba-vpc
+moba_vpc_key: moba-vpc
+moba_vpc_key_material: csb.pem
+moba_project_name: ghost-train
+moba_created_by: Ansible
+
+# Change CIDR Block
+# IP CIDR block for the VPC
+moba_vpc_cidr_block: 10.1.1.0/28
+moba_aws_region: us-gov-west-1
+
+# a map defining the subnets we will build in the VPC
+moba_vpc_subnets:
+  example-subnet1:
+    cidr: 10.1.1.0/28
+    az: "{{ moba_aws_region }}a"
+
+# a list defining the security groups for our VPC
+moba_vpc_security_groups:
+  - name: allow-example-public-ssh
+    description: "Allow public SSH"
+    rules:
+      - proto: tcp
+        cidr_ip: 0.0.0.0/0
+        ports:
+          - 22
+  - name: allow-example-public-http
+    description: "Allow example public http"
+    rules:
+      - proto: tcp
+        cidr_ip: 0.0.0.0/0
+        ports:
+          - 8181
+  - name: allow-example-public-https
+    description: "Allow example public https"
+    rules:
+      - proto: tcp
+        cidr_ip: 0.0.0.0/0
+        ports:
+          - 8443
+
+# This list should contain the unique values for the instance
+# "usage" parameter
+moba_usage_list:
+  - moba
+# Create the data structure for the EC2 instances.
+moba_instances:
+  moba01:
+    subnet: "{{ moba_vpc_subnet_ids['example-subnet1'] }}"
+    secgroup: ['allow-example-public-ssh', 'allow-example-public-http', 'allow-example-public-https']
+    instancetype: t2.medium
+    usage: moba
+    image: ami-a1d349c0
+    vol_device_name: /dev/xvda
+    vol_type: io1
+    vol_size: 100

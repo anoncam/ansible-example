@@ -1,0 +1,95 @@
+---
+# use the Ansible module to create our VPC, saving the output into `create_vpc`
+- name: "{{ moba_vpc_name }} | Create VPC"
+  ec2_vpc_net:
+    name: "{{ moba_vpc_name }}"
+    cidr_block: "{{ moba_vpc_cidr_block }}"
+    region: "{{ moba_aws_region }}"
+    tags:
+      Project: "{{ moba_project_name }}"
+      CreatedBy: "{{ moba_created_by }}"
+  register: create_vpc
+
+# parse the output of creating the VPC to extract the VPC ID -- we need to specify this in the subsequent tasks
+- name: "{{ moba_vpc_name }} | Set fact: VPC ID"
+  set_fact:
+    moba_vpc_id: "{{ create_vpc.vpc.id }}"
+
+# iterate over our dictionary of subnets with `with_dict`, and create each one with the Ansible module
+- name: "{{ moba_vpc_name }} | Create VPC subnets"
+  ec2_vpc_subnet:
+    state: present
+    vpc_id: "{{ moba_vpc_id }}"
+    cidr: "{{ item.value.cidr }}"
+    region: "{{ moba_aws_region }}"
+    az: "{{ item.value.az }}"
+    tags:
+      Name: "{{ item.key }}"
+      Project: "{{ moba_project_name }}"
+      CreatedBy: "{{ moba_created_by }}"
+  with_dict: "{{ moba_vpc_subnets }}"
+  register: create_moba_vpc_subnets
+
+# this is a tricky one, using some filters to:
+# - loop over the list of outputs from creating our subnets
+# - for that subnet, define a "name: id" entry in the `vpc_subnet_ids` dictionary (or empty dictionary if it doesn't exist)
+- name: "{{ moba_vpc_name }} | Set fact: VPC subnet IDs"
+  set_fact:
+    moba_vpc_subnet_ids: "{{ vpc_subnet_ids | default({}) | combine({ item.subnet.tags.Name: item.subnet.id }) }}"
+  loop: "{{ create_moba_vpc_subnets.results }}"
+
+# iterate over our list of security groups and create each one with the Ansible module
+- name: "{{ moba_vpc_name }} | Create VPC security groups"
+  ec2_group:
+    state: present
+    name: "{{ item.name }}"
+    description: "{{ item.description }}"
+    vpc_id: "{{ moba_vpc_id }}"
+    region: "{{ moba_aws_region }}"
+    rules: "{{ item.rules }}"
+    tags:
+      Project: "{{ moba_project_name }}"
+      CreatedBy: "{{ moba_created_by }}"
+  loop: "{{ moba_vpc_security_groups }}"
+
+- name: "{{ moba_vpc_name }} | Create IGW"
+  ec2_vpc_igw:
+    state: present
+    vpc_id: "{{ moba_vpc_id }}"
+    region: "{{ moba_aws_region }}"
+    tags:
+      Name: "{{ moba_vpc_name }}"
+      Project: "{{ moba_project_name }}"
+      CreatedBy: "{{ moba_created_by }}"
+  register: igw
+
+- name: "{{ moba_vpc_name }} | Set up route tables for private subnets"
+  ec2_vpc_route_table:
+    state: present
+    vpc_id: "{{ moba_vpc_id }}"
+    region: "{{ moba_aws_region }}"
+    tags:
+      Name: "{{ moba_vpc_name }}"
+      Project: "{{ moba_project_name }}"
+    subnets:
+      - "{{ moba_vpc_subnet_ids['example-subnet1'] }}"
+    routes:
+      - dest: 0.0.0.0/0
+        gateway_id: "{{ igw.gateway_id }}"
+  register: aws_vpc_route_table
+
+- name: "{{ moba_vpc_name }} | Create EC2 key"
+  ec2_key:
+    state: present
+    region: "{{ moba_aws_region }}"
+    name: "{{ moba_vpc_key }}"
+    key_material: "{{ moba_vpc_key_material }}"
+    force: false
+
+# create a private hosted zone for the VPC with the Ansible module
+# - name: "{{ moba_vpc_name }} | Create Route 53 private hosted zone"
+#  route53_zone:
+#    zone: "{{ moba_vpc_dns_zone }}"
+#    state: present
+#    vpc_id: "{{ moba_vpc_id }}"
+#    vpc_region: "{{ moba_aws_region }}"

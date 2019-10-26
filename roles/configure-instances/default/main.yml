@@ -1,0 +1,6 @@
+example_base_packages:
+  - unzip
+  - vim
+  - wget
+  - git
+  - logwatch
